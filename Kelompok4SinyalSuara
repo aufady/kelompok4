@@ -1,0 +1,182 @@
+import sys
+import os
+import time
+import numpy as np
+import wavio
+import sounddevice as sd
+from PyQt5 import QtCore, QtWidgets
+import pyqtgraph as pg
+from scipy.io import wavfile
+import requests
+import math
+
+# Fungsi untuk menghitung desibel dari tekanan suara
+def hitung_desibel(tekanan_suara, tekanan_referensi=20e-6):
+    if tekanan_suara <= 0:
+        raise ValueError("Tekanan suara harus lebih besar dari 0.")
+    db = 20 * math.log10(tekanan_suara / tekanan_referensi)
+    return db
+
+# Fungsi untuk mengunggah file audio ke Edge Impulse untuk training
+def upload_audio_to_edge_impulse(audio_filename, api_key, label):
+    url = "https://ingestion.edgeimpulse.com/api/training/files"
+    
+    with open(audio_filename, "rb") as f:
+        response = requests.post(
+            url,
+            headers={
+                "x-label": label,
+                "x-api-key": api_key,
+            },
+            files={"data": (os.path.basename(audio_filename), f, "audio/wav")},
+        )
+
+    if response.status_code == 200:
+        print(f"Uploaded {audio_filename} successfully to Edge Impulse!")
+    else:
+        print(f"Failed to upload {audio_filename}. Status code: {response.status_code}")
+        print("Response text:", response.text)
+
+# Fungsi untuk mengunggah file ke Edge Impulse untuk storage
+def upload_to_edge_impulse_storage(file_path, project_id, api_key):
+    """
+    Mengunggah file audio ke Edge Impulse storage menggunakan HTTP API REST.
+
+    :param file_path: Lokasi file audio yang akan diunggah
+    :param project_id: ID proyek Edge Impulse
+    :param api_key: API key Edge Impulse
+    """
+    try:
+        url = f"https://ingestion.edgeimpulse.com/api/storage/{project_id}"
+        headers = {
+            "x-api-key": api_key,
+            "Content-Type": "application/octet-stream"
+        }
+
+        with open(file_path, 'rb') as f:
+            file_data = f.read()
+
+        response = requests.post(url, headers=headers, data=file_data)
+
+        if response.status_code == 200:
+            print(f"File berhasil diunggah ke Edge Impulse: {response.json()}")
+        else:
+            print(f"Gagal mengunggah ke Edge Impulse: {response.status_code}, {response.text}")
+    except Exception as e:
+        print(f"Gagal mengunggah ke Edge Impulse: {e}")
+
+class Ui_MainWindow(object):
+    def setupUi(self, MainWindow):
+        MainWindow.setObjectName("MainWindow")
+        MainWindow.resize(800, 700)
+        self.centralwidget = QtWidgets.QWidget(MainWindow)
+        self.gridLayout = QtWidgets.QGridLayout(self.centralwidget)
+
+        self.label_title = QtWidgets.QLabel(self.centralwidget)
+        self.label_title.setText("<h3 align='center'>Audio Recorder</h3>")
+        self.gridLayout.addWidget(self.label_title, 0, 0, 1, 1)
+
+        self.pushButton_record = QtWidgets.QPushButton("Start Recording")
+        self.pushButton_replay = QtWidgets.QPushButton("Replay Audio")
+        self.pushButton_replay.setEnabled(False)
+
+        self.gridLayout.addWidget(self.pushButton_record, 1, 0)
+        self.gridLayout.addWidget(self.pushButton_replay, 2, 0)
+
+        self.plot_widget_time = pg.PlotWidget(self.centralwidget)
+        self.plot_widget_time.setBackground('w')
+        self.plot_widget_time.setTitle("Time Domain Signal")
+        self.plot_widget_time.showGrid(x=True, y=True)
+        self.gridLayout.addWidget(self.plot_widget_time, 3, 0, 1, 1)
+
+        self.plot_widget_freq = pg.PlotWidget(self.centralwidget)
+        self.plot_widget_freq.setBackground('w')
+        self.plot_widget_freq.setTitle("Frequency Domain (DFT)")
+        self.plot_widget_freq.showGrid(x=True, y=True)
+        self.gridLayout.addWidget(self.plot_widget_freq, 4, 0, 1, 1)
+
+        self.plot_data_time = self.plot_widget_time.plot(pen=pg.mkPen(color='green', width=1))
+        self.plot_data_freq = self.plot_widget_freq.plot(pen=pg.mkPen(color='red', width=1))
+        
+        MainWindow.setCentralWidget(self.centralwidget)
+
+        self.is_recording = False
+        self.audio_data = []
+        self.audio_file_path = "recorded_audio.wav"
+
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.update_plot)
+
+        self.pushButton_record.clicked.connect(self.toggle_recording)
+        self.pushButton_replay.clicked.connect(self.replay_audio)
+
+    def toggle_recording(self):
+        if not self.is_recording:
+            self.is_recording = True
+            self.pushButton_record.setText("Stop Recording")
+            self.start_recording()
+        else:
+            self.is_recording = False
+            self.pushButton_record.setText("Start Recording")
+            self.stop_recording()
+
+    def start_recording(self):
+        self.sampling_rate = 16000
+        self.audio_data = []
+        try:
+            self.stream = sd.InputStream(callback=self.audio_callback, channels=1, samplerate=self.sampling_rate)
+            self.stream.start()
+            self.timer.start(50)
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(None, "Error", f"Failed to start recording: {e}")
+            self.is_recording = False
+            self.pushButton_record.setText("Start Recording")
+
+    def stop_recording(self):
+        if hasattr(self, 'stream') and self.stream:
+            self.stream.stop()
+            self.stream.close()
+        self.timer.stop()
+        self.save_audio()
+        self.pushButton_replay.setEnabled(True)
+
+    def save_audio(self):
+        if self.audio_data:
+            audio_data_np = np.concatenate(self.audio_data)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            file_name = f"recorded_audio_{timestamp}.wav"
+            wavio.write(file_name, audio_data_np, self.sampling_rate, sampwidth=2)
+
+            # Mengunggah file ke Edge Impulse
+            api_key = "ei_450f8764237bd1a4730b9b7636f5a5edf624db7a6956af5b3d2802d8fb2f5990"
+            label = "sound laptop berfungsi dan tidak berfungsi"  # Ganti dengan label kategori yang sesuai
+            upload_audio_to_edge_impulse(file_name, api_key, label)
+
+            self.audio_file_path = file_name
+
+    def replay_audio(self):
+        if os.path.exists(self.audio_file_path):
+            _, data = wavfile.read(self.audio_file_path)
+            sd.play(data, self.sampling_rate)
+
+    def audio_callback(self, indata, frames, time, status):
+        if status:
+            print(status)
+        self.audio_data.append(indata.copy())
+
+    def update_plot(self):
+        if self.audio_data:
+            self.plot_data_time.setData(np.concatenate(self.audio_data)[:, 0])
+            audio_array = np.concatenate(self.audio_data)
+            fft_data = np.fft.fft(audio_array[:, 0])
+            freqs = np.fft.fftfreq(len(fft_data), 1/self.sampling_rate)
+            self.plot_data_freq.setData(freqs[:len(freqs)//2], np.abs(fft_data[:len(fft_data)//2]))
+
+
+if __name__ == "__main__":
+    app = QtWidgets.QApplication(sys.argv)
+    MainWindow = QtWidgets.QMainWindow()
+    ui = Ui_MainWindow()
+    ui.setupUi(MainWindow)
+    MainWindow.show()
+    sys.exit(app.exec_())
