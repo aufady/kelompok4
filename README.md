@@ -1,3 +1,5 @@
+(Aplikasi Qt nya belum diupload)
+
 Peralatan & Bahan 
 Peralatan yang dibutuhkan untuk mini project ini adalah :
 1. Dua laptop.
