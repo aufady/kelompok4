@@ -81,6 +81,7 @@ python main.py
 
 ### 2. Record Audio
 -Klik tombol "Start Recording" untuk merekam suara speaker laptop.
+
 -Visualisasi sinyal akan diperbarui secara real-time dalam domain waktu dan frekuensi.
 
 ### 3. Save and Analyze
