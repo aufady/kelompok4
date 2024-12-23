@@ -1,5 +1,5 @@
 ![Gambar 1](https://github.com/aufady/kelompok4_Project_SPS/blob/main/Tampilan%20GUI%20suara%20dari%20speaker%20berfungsi%20normal.PNG)  
-*Tampilan Qt Designer Hasil Rekaman Suara dari Speaker Laptop yang Berfungsi Normal:*
+*Tampilan Qt Designer Hasil Rekaman Suara dari Speaker Laptop yang Berfungsi Normal*
 
 ![Gambar 2](https://github.com/aufady/kelompok4_Project_SPS/blob/main/Tampilan%20GUI%20suara%20dari%20speaker%20laptop%20rusak.PNG)  
 *Tampilan Qt Designer Hasil Rekaman Suara dari Speaker Laptop yang Rusak*
